@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Castle The Great</title>
+
+<style>
+body { margin:0; overflow:hidden; font-family:Arial; background:#87CEEB; }
+canvas { display:block; margin:auto; }
+
+#ui{
+  position:fixed; top:10px; left:10px;
+  font-weight:bold; z-index:10;
+}
+
+#hearts{ color:red; }
+
+#msg{
+  position:fixed;
+  top:0; left:0;
+  width:100%; height:100%;
+  background:rgba(0,0,0,0.85);
+  color:white;
+  display:none;
+  text-align:center;
+  z-index:50;
+  padding-top:120px;
+}
+
+#menu, #cutscene{
+  position:fixed;
+  top:0; left:0;
+  width:100%; height:100%;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  z-index:100;
+}
+
+#menu{
+  background:linear-gradient(to bottom,#1a2a6c,#87CEEB);
+}
+
+#cutscene{
+  background:rgba(0,0,0,0.95);
+  color:white;
+  display:none;
+  padding:20px;
+}
+
+.title{
+  font-size:40px;
+  font-weight:bold;
+  color:white;
+  text-shadow:2px 2px black;
+}
+
+.subtitle{
+  color:white;
+  opacity:0.9;
+  margin:10px 0;
+}
+
+button{
+  padding:12px 20px;
+  font-size:18px;
+  border:none;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+#controls{
+  position:fixed;
+  bottom:20px;
+  width:100%;
+  display:flex;
+  justify-content:center;
+}
+
+.btn{
+  width:80px;
+  height:80px;
+  background:rgba(0,0,0,0.2);
+  border-radius:15px;
+  text-align:center;
+  line-height:80px;
+  font-size:34px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+🎁 Items: <span id="score">0</span>/3
+<div id="hearts">❤️❤️❤️❤️❤️</div>
+<div style="font-size:12px;opacity:0.8;margin-top:4px;">
+Reach castle after collecting all items
+</div>
+</div>
+
+<div id="msg"></div>
+
+<!-- MENU -->
+<div id="menu">
+  <div class="title">🏰 CASTLE THE GREAT</div>
+  <div class="subtitle">A dangerous journey beyond the valley</div>
+  <button onclick="startCutscene()">▶ START GAME</button>
+  <div style="margin-top:15px;color:white;font-size:13px;opacity:0.7;">
+    Made by <b>Reshi_Ven</b>
+  </div>
+</div>
+
+<!-- CUTSCENE -->
+<div id="cutscene">
+  <h2>📜 Mission Brief</h2>
+  <p id="dialogue"></p>
+  <button onclick="nextDialogue()">Next ▶</button>
+</div>
+
+<canvas id="game" width="900" height="500"></canvas>
+
+<div id="controls">
+  <div class="btn" id="jump">⬆</div>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let running=false;
+
+// STORY
+const story=[
+ "A castle stands far beyond the valley...",
+ "Strange items are scattered across the land...",
+ "Dangerous enemies guard the path...",
+ "Only the brave can reach the castle..."
+];
+
+let storyIndex=0;
+
+function startCutscene(){
+ document.getElementById("menu").style.display="none";
+ document.getElementById("cutscene").style.display="flex";
+ document.getElementById("dialogue").innerText=story[0];
+}
+
+function nextDialogue(){
+ storyIndex++;
+ if(storyIndex>=story.length){
+   document.getElementById("cutscene").style.display="none";
+   startGame();
+ } else {
+   document.getElementById("dialogue").innerText=story[storyIndex];
+ }
+}
+
+function startGame(){
+ running=true;
+}
+
+// WORLD
+let cameraX=0;
+
+let player={x:100,y:300,vy:0,jumps:2,frame:0};
+
+let score=0;
+let hearts=5;
+let anim=0;
+
+const groundY=450;
+
+// ZONES
+const hazardZones=[
+ {x:0,y:groundY,w:600,h:50},
+ {x:1200,y:groundY,w:500,h:50},
+ {x:2000,y:groundY,w:400,h:50}
+];
+
+const voidZones=[
+ {x:700,y:groundY,w:80,h:50},
+ {x:1600,y:groundY,w:80,h:50},
+ {x:2500,y:groundY,w:120,h:50}
+];
+
+// PLATFORM
+const platforms=[
+ {x:0,y:groundY,w:3200,h:50},
+ {x:400,y:380,w:120,h:10},
+ {x:600,y:320,w:120,h:10},
+ {x:900,y:380,w:120,h:10},
+ {x:1200,y:360,w:120,h:10},
+ {x:1500,y:320,w:120,h:10},
+ {x:1800,y:380,w:120,h:10},
+ {x:2200,y:340,w:120,h:10},
+ {x:2500,y:300,w:120,h:10}
+];
+
+// CASTLE
+const castle={x:2900,y:groundY-80};
+
+// ITEMS
+const items=[
+ {x:500,y:340,taken:false},
+ {x:1300,y:300,taken:false},
+ {x:2300,y:300,taken:false}
+];
+
+// ENEMIES
+const enemies=[
+ {x:700,y:groundY-20,dir:1,min:650,max:850},
+ {x:1600,y:groundY-20,dir:-1,min:1500,max:1750}
+];
+
+// FLYING
+const flying=[
+ {x:900,y:250,dir:1},
+ {x:2000,y:200,dir:-1}
+];
+
+let gameWon=false;
+
+// HIT
+function hit(){
+ if(gameWon) return;
+
+ hearts--;
+ document.getElementById("hearts").innerText="❤️".repeat(hearts);
+
+ player.x=100;
+ player.y=300;
+
+ if(hearts<=0){
+  running=false;
+  document.getElementById("msg").style.display="block";
+  document.getElementById("msg").innerHTML=
+  "💀 Game Over<br><button onclick='location.reload()'>Try Again</button>";
+ }
+}
+
+// CHECK DAMAGE
+function checkZones(){
+ hazardZones.forEach(z=>{
+  if(player.x < z.x+z.w &&
+     player.x+20 > z.x &&
+     player.y+20 > z.y) hit();
+ });
+
+ voidZones.forEach(v=>{
+  if(player.x < v.x+v.w &&
+     player.x+20 > v.x &&
+     player.y+20 > v.y) hit();
+ });
+}
+
+// WIN / FAIL LOGIC 🎯
+function winGame(){
+ gameWon=true;
+ running=false;
+
+ // ❌ NOT ALL ITEMS
+ if(score < 3){
+  document.getElementById("msg").style.display="block";
+  document.getElementById("msg").innerHTML=`
+    <h1>⚠ Oops!</h1>
+    <h2>You missed a gift!</h2>
+    <p>Collect all 3 items before entering the castle 🏰</p>
+    <button onclick="location.reload()">Try Again</button>
+  `;
+  return;
+ }
+
+ // 🎉 SURPRISE END
+ document.getElementById("msg").style.display="block";
+ document.getElementById("msg").innerHTML=`
+   <h1>🎉 SURPRISE! 🎉</h1>
+   <h2>Nicole Agustin</h2>
+   <p>You completed Castle The Great 🏰</p>
+   <p>Wishing you a very happy birthday! Today is a reminder of how special you are and how much positivity you bring to the people around you. May this year open new doors of happiness, success, and unforgettable memories for you.
+
+I hope your journey ahead is filled with laughter, peace, and achievements you’re proud of. No matter where life takes you, always keep your confidence and kindness shining the same way you do now.
+
+sana magbago kana puro ka backstab de jk HAHHAHAH geh enjoy your day💖</p>
+   <button onclick="location.reload()">Play Again</button>
+ `;
+}
+
+// UPDATE
+function update(){
+ if(!running) return;
+
+ player.vy+=0.6;
+ player.y+=player.vy;
+ player.x+=3;
+
+ cameraX=player.x-300;
+
+ player.frame+=0.2;
+
+ // platforms
+ platforms.forEach(p=>{
+  if(player.x < p.x+p.w &&
+     player.x+20 > p.x &&
+     player.y < p.y+p.h &&
+     player.y+20 > p.y){
+       player.y=p.y-20;
+       player.vy=0;
+       player.jumps=2;
+  }
+ });
+
+ // items
+ items.forEach(i=>{
+  if(!i.taken &&
+     player.x < i.x+20 &&
+     player.x+20 > i.x &&
+     player.y < i.y+20 &&
+     player.y+20 > i.y){
+       i.taken=true;
+       score++;
+       document.getElementById("score").innerText=score;
+  }
+ });
+
+ // enemies
+ enemies.forEach(e=>{
+  e.x+=e.dir*2;
+  if(e.x>e.max) e.dir=-1;
+  if(e.x<e.min) e.dir=1;
+
+  if(player.x < e.x+20 &&
+     player.x+20 > e.x &&
+     player.y < e.y+20 &&
+     player.y+20 > e.y) hit();
+ });
+
+ // flying
+ flying.forEach(f=>{
+  f.x+=f.dir*2;
+  f.y+=Math.sin(anim*0.05)*2;
+
+  if(player.x < f.x+20 &&
+     player.x+20 > f.x &&
+     player.y < f.y+20 &&
+     player.y+20 > f.y) hit();
+ });
+
+ checkZones();
+
+ if(player.x>castle.x){
+  winGame();
+ }
+
+ if(player.y>500) hit();
+
+ anim++;
+}
+
+// PLAYER DRAW
+function drawPlayer(){
+ let speed = Math.abs(player.vy) + 0.2;
+ let t = player.frame * 6;
+
+ let leg = Math.sin(t) * 6;
+ let arm = Math.sin(t) * 5;
+ let bounce = Math.sin(t) * 2;
+
+ ctx.save();
+
+ // BODY
+ ctx.fillStyle="#1e90ff";
+ ctx.fillRect(player.x-8, player.y-25+bounce, 16, 25);
+
+ // HEAD
+ ctx.beginPath();
+ ctx.arc(player.x, player.y-35+bounce, 8, 0, Math.PI*2);
+ ctx.fill();
+
+ // EYES (tiny detail makes it feel like a real character)
+ ctx.fillStyle="white";
+ ctx.fillRect(player.x-3, player.y-37+bounce, 2,2);
+ ctx.fillRect(player.x+1, player.y-37+bounce, 2,2);
+
+ // ARMS (animated swing)
+ ctx.strokeStyle="#1e90ff";
+ ctx.beginPath();
+ ctx.moveTo(player.x-8, player.y-18+bounce);
+ ctx.lineTo(player.x-8-arm, player.y-10+bounce);
+ ctx.moveTo(player.x+8, player.y-18+bounce);
+ ctx.lineTo(player.x+8+arm, player.y-10+bounce);
+ ctx.stroke();
+
+ // LEGS (RUN CYCLE)
+ ctx.beginPath();
+ ctx.moveTo(player.x-4, player.y);
+ ctx.lineTo(player.x-4-leg, player.y+15);
+
+ ctx.moveTo(player.x+4, player.y);
+ ctx.lineTo(player.x+4+leg, player.y+15);
+ ctx.stroke();
+
+ ctx.restore();
+}
+
+// DRAW WORLD
+function draw(){
+ ctx.clearRect(0,0,900,500);
+
+ ctx.save();
+ ctx.translate(-cameraX,0);
+
+ ctx.fillStyle="#87CEEB";
+ ctx.fillRect(0,0,3200,500);
+
+ ctx.fillStyle="#3cb043";
+ ctx.fillRect(0,groundY,3200,100);
+
+ ctx.fillStyle="#2e8b57";
+ platforms.forEach(p=>ctx.fillRect(p.x,p.y,p.w,p.h));
+
+ ctx.fillStyle="#0b5d1e";
+ hazardZones.forEach(z=>ctx.fillRect(z.x,z.y,z.w,z.h));
+
+ ctx.fillStyle="rgba(0,0,0,0.5)";
+ voidZones.forEach(v=>ctx.fillRect(v.x,v.y,60,50));
+
+ ctx.font="22px Arial";
+ items.forEach(i=>{
+  if(!i.taken) ctx.fillText("🎁",i.x,i.y);
+ });
+
+ ctx.font="80px Arial";
+ ctx.fillText("🏰",castle.x,castle.y);
+
+ ctx.fillStyle="black";
+ enemies.forEach(e=>{
+  ctx.beginPath();
+  ctx.arc(e.x,e.y,10,0,Math.PI*2);
+  ctx.fill();
+ });
+
+ ctx.fillStyle="white";
+ flying.forEach(f=>{
+  ctx.beginPath();
+  ctx.arc(f.x,f.y,10,0,Math.PI*2);
+  ctx.fill();
+ });
+
+ drawPlayer();
+
+ ctx.restore();
+}
+
+// LOOP
+function loop(){
+ update();
+ draw();
+ requestAnimationFrame(loop);
+}
+loop();
+
+// JUMP
+document.getElementById("jump").addEventListener("pointerdown",()=>{
+ if(player.jumps>0){
+  player.vy=-10;
+  player.jumps--;
+ }
+});
+</script>
+
+</body>
+</html>                                                                                                                                                                                                                                                                                                   
